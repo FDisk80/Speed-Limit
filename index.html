@@ -25,7 +25,7 @@
             overflow: hidden;
         }
 
-        /* Renamed to vertical animation */
+        /* Vertical animation */
         @keyframes full-bob-vertical {
             0% { transform: translateY(0); }
             25% { transform: translateY(calc(50vh - 50% - 15px)); }
@@ -34,7 +34,7 @@
             100% { transform: translateY(0); }
         }
         
-        /* Added horizontal animation for landscape mode */
+        /* Horizontal animation */
         @keyframes full-bob-horizontal {
             0% { transform: translateX(0); }
             25% { transform: translateX(calc(50vw - 50% - 15px)); }
@@ -55,7 +55,6 @@
             max-width: 450px;
             max-height: 450px;
             position: absolute;
-            /* Animation is now applied via class */
         }
 
         /* Classes to apply orientation-specific animations */
@@ -101,22 +100,13 @@
             line-height: 1; 
         }
         
-        /* NEW: Media query specifically for landscape orientation */
+        /* UPDATED: Media query specifically for landscape orientation with more aggressive size reduction */
         @media (orientation: landscape) {
             .font-size-large {
-                font-size: 58vmin; /* Smaller font size for landscape */
+                font-size: 45vmin; /* Significantly smaller for landscape */
             }
             .font-size-medium {
-                font-size: 42vmin; /* Smaller font size for landscape */
-            }
-        }
-
-        @media (min-width: 450px) {
-            .font-size-large {
-                font-size: 255px;
-            }
-            .font-size-medium {
-                font-size: 185px;
+                font-size: 34vmin; /* Significantly smaller for landscape */
             }
         }
         
@@ -124,11 +114,6 @@
             font-size: 25vmin !important;
         }
         
-        @media (min-width: 450px) {
-           .error-text {
-                font-size: 110px !important;
-            }
-        }
     </style>
 </head>
 <body>
@@ -304,7 +289,6 @@
             } else {
                 window.addEventListener('resize', handleOrientationChange);
             }
-
 
             setTimeout(() => {
                 if (!document.fullscreenElement) {
