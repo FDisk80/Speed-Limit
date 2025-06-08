@@ -2,15 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#000000">
-    <title>Real-Time Speed Limit</title>
-    <link rel="manifest" href="manifest.json">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speed Limit</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@700&display=swap');
 
         body, html {
             margin: 0;
@@ -21,48 +16,16 @@
             justify-content: center;
             align-items: center;
             background-color: #000000;
-            font-family: 'Roboto', sans-serif;
+            font-family: 'Poppins', sans-serif;
             overflow: hidden;
-        }
-
-        /* Vertical animation */
-        @keyframes full-bob-vertical {
-            0% { transform: translateY(0); }
-            25% { transform: translateY(calc(50vh - 50% - 15px)); }
-            50% { transform: translateY(0); }
-            75% { transform: translateY(calc(-50vh + 50% + 15px)); }
-            100% { transform: translateY(0); }
-        }
-        
-        /* Horizontal animation */
-        @keyframes full-bob-horizontal {
-            0% { transform: translateX(0); }
-            25% { transform: translateX(calc(50vw - 50% - 15px)); }
-            50% { transform: translateX(0); }
-            75% { transform: translateX(calc(-50vw + 50% + 15px)); }
-            100% { transform: translateX(0); }
-        }
-        
-        @keyframes pulse {
-            0% { transform: scale(1); box-shadow: 0 0 30px rgba(255, 255, 255, 0.3); }
-            50% { transform: scale(1.05); box-shadow: 0 0 45px rgba(100, 255, 100, 0.7); }
-            100% { transform: scale(1); box-shadow: 0 0 30px rgba(255, 255, 255, 0.3); }
         }
 
         .sign-container {
             width: 90vmin;
             height: 90vmin;
-            max-width: 450px;
-            max-height: 450px;
-            position: absolute;
-        }
-
-        /* Classes to apply orientation-specific animations */
-        .bob-vertical {
-            animation: full-bob-vertical 600s ease-in-out infinite;
-        }
-        .bob-horizontal {
-            animation: full-bob-horizontal 600s ease-in-out infinite;
+            max-width: 400px;
+            max-height: 400px;
+            position: relative;
         }
 
         .speed-sign {
@@ -78,42 +41,48 @@
             box-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
             text-align: center;
         }
-        
-        .sign-pulse .speed-sign {
-            animation: pulse 0.5s ease-out;
-        }
 
         #speed-limit {
-            font-weight: 900;
+            /* Font size reduced as requested */
+            font-size: 28vmin;
+            font-weight: 700;
             color: #000000;
-            box-sizing: border-box;
+            line-height: 1;
         }
         
-        /* Default font sizes (Portrait) */
-        .font-size-large {
-            font-size: 62vmin;
-            line-height: 1; 
-        }
-        
-        .font-size-medium {
-            font-size: 46vmin;
-            line-height: 1; 
-        }
-        
-        /* UPDATED: Media query with larger, balanced font sizes for landscape */
-        @media (orientation: landscape) {
-            .font-size-large {
-                font-size: 58vmin; /* Increased from 55vmin */
-            }
-            .font-size-medium {
-                font-size: 43vmin; /* Increased from 40vmin */
+        @media (min-width: 450px) {
+            #speed-limit {
+                font-size: 120px;
             }
         }
         
+        /* Smaller font size for error messages */
         .error-text {
-            font-size: 25vmin !important;
+            font-size: 15vmin !important;
         }
         
+        @media (min-width: 450px) {
+           .error-text {
+                font-size: 70px !important;
+            }
+        }
+
+
+        .message-box {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            text-align: center;
+            max-width: 90%;
+            box-sizing: border-box;
+            display: none; /* Hidden by default */
+        }
     </style>
 </head>
 <body>
@@ -124,195 +93,167 @@
         </div>
     </div>
     
+    <div id="messageBox" class="message-box"></div>
+
     <script>
         const speedLimitElement = document.getElementById('speed-limit');
-        const signContainerElement = document.querySelector('.sign-container');
+        const messageBox = document.getElementById('messageBox');
         let lastKnownSpeed = null;
-        let watchId = null;
-        let wakeLock = null;
+        let isFetching = false;
 
-        const requestWakeLock = async () => {
-          if ('wakeLock' in navigator) {
-            try {
-              wakeLock = await navigator.wakeLock.request('screen');
-              wakeLock.addEventListener('release', () => console.log('Screen Wake Lock was released'));
-              console.log('Screen Wake Lock is active');
-            } catch (err) {
-              console.error(`Wake Lock Error: ${err.name}, ${err.message}`);
-            }
-          }
+        // --- Data for improving accuracy ---
+
+        // 1. Prioritize more important roads over less important ones.
+        const roadHierarchy = [
+            'motorway', 'trunk', 'primary', 'secondary', 'tertiary',
+            'unclassified', 'residential', 'service'
+        ];
+
+        // 2. Fallback to default speed limits (km/h) based on road type if no explicit speed is found.
+        // These can be adjusted for any region.
+        const defaultSpeedLimits = {
+            'motorway': 120,
+            'trunk': 110,
+            'primary': 90,
+            'secondary': 90,
+            'tertiary': 80,
+            'residential': 50,
+            'living_street': 30,
+            'service': 40,
+            'unclassified': 80
         };
 
-        const toggleFullScreen = () => {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(err => console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`));
-            } else if (document.exitFullscreen) {
-                document.exitFullscreen();
-            }
-        };
 
+        // --- Function to show messages to the user ---
+        function showMessage(message, duration = 4000) {
+            messageBox.textContent = message;
+            messageBox.style.display = 'block';
+            setTimeout(() => {
+                messageBox.style.display = 'none';
+            }, duration);
+        }
+
+        // --- Function to fetch speed limit, now more robust ---
         async function fetchSpeedLimit(lat, lon) {
-            const overpassApiUrl = 'https://overpass-api.de/api/interpreter';
-            const primaryQuery = `[out:json][timeout:10]; way(around:50, ${lat}, ${lon})[highway][maxspeed]; out tags;`;
-            
+            // New query fetches ANY road nearby, not just those with a speed limit tag.
+            const query = `[out:json][timeout:10];
+                way(around:25, ${lat}, ${lon})[highway];
+                out tags;`;
+            const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+
             try {
-                const response = await fetch(`${overpassApiUrl}?data=${encodeURIComponent(primaryQuery)}`);
-                if (!response.ok) throw new Error(`Primary query failed: ${response.status}`);
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
                 
-                if (data.elements.length > 0 && data.elements[0].tags.maxspeed) {
-                    return data.elements[0].tags.maxspeed;
+                if (data.elements.length === 0) return null; // No roads found
+
+                // Find the most important road from the results based on our hierarchy.
+                let bestRoad = data.elements[0];
+                if (data.elements.length > 1) {
+                    bestRoad = data.elements.sort((a, b) => {
+                        const aIndex = roadHierarchy.indexOf(a.tags.highway);
+                        const bIndex = roadHierarchy.indexOf(b.tags.highway);
+                        return aIndex - bIndex;
+                    })[0];
                 }
 
-                const fallbackQuery = `[out:json][timeout:10]; way(around:50, ${lat}, ${lon})[highway]; out tags;`;
-                const fallbackResponse = await fetch(`${overpassApiUrl}?data=${encodeURIComponent(fallbackQuery)}`);
-                if (!fallbackResponse.ok) throw new Error(`Fallback query failed: ${fallbackResponse.status}`);
-                const fallbackData = await fallbackResponse.json();
-
-                if (fallbackData.elements.length > 0) {
-                    const roadType = fallbackData.elements[0].tags.highway;
-                    switch (roadType) {
-                        case 'motorway': return '110';
-                        case 'trunk': return '90';
-                        case 'primary': return '80';
-                        case 'secondary': return '70';
-                        case 'tertiary': return '60';
-                        case 'residential':
-                        case 'unclassified':
-                        case 'living_street':
-                            return '50';
-                        default: return null;
-                    }
+                // First, check for an explicit 'maxspeed' tag on the best road.
+                if (bestRoad.tags.maxspeed && !isNaN(bestRoad.tags.maxspeed)) {
+                    showMessage("Found explicit speed limit.", 2000);
+                    return bestRoad.tags.maxspeed;
                 }
-                return null;
+                
+                // If no explicit tag, use our fallback defaults.
+                const roadType = bestRoad.tags.highway;
+                if (defaultSpeedLimits[roadType]) {
+                    showMessage(`Using default for '${roadType}' road.`, 3000);
+                    return defaultSpeedLimits[roadType];
+                }
+
+                return null; // No explicit or default speed found.
             } catch (error) {
                 console.error("Error fetching speed limit:", error);
+                showMessage("Could not fetch speed limit data.");
                 return null;
             }
         }
 
-        function updateDisplay(speed, isInitialCall = false) {
+        // --- Function to update the display ---
+        function updateDisplay(speed) {
+            const speedStr = speed ? String(speed) : '--';
             speedLimitElement.classList.remove('error-text');
-            
-            if (isInitialCall || speed !== lastKnownSpeed) {
-                signContainerElement.classList.add('sign-pulse');
-                setTimeout(() => signContainerElement.classList.remove('sign-pulse'), 500);
-
-                const speedText = speed || '--';
-                speedLimitElement.textContent = speedText;
-                lastKnownSpeed = speed;
-                speedLimitElement.classList.remove('font-size-large', 'font-size-medium');
-                
-                if (speedText.toString().length >= 3) {
-                    speedLimitElement.classList.add('font-size-medium');
-                } else {
-                    speedLimitElement.classList.add('font-size-large');
-                }
+            if (speedStr !== lastKnownSpeed) {
+                console.log(`Speed limit changed from ${lastKnownSpeed} to ${speedStr}`);
+                speedLimitElement.textContent = speedStr;
+                lastKnownSpeed = speedStr;
             }
         }
         
+        // --- Main function to process a successful location fix ---
         async function processLocation(position) {
+            isFetching = false; 
             const { latitude, longitude } = position.coords;
-            console.log(`Watcher reported new position: ${latitude}, ${longitude}`);
+            console.log(`Successfully got position: ${latitude}, ${longitude}`);
             const speed = await fetchSpeedLimit(latitude, longitude);
             updateDisplay(speed);
         }
 
-        function locationError(error) {
-            console.error(`Geolocation error: ${error.message} (Code: ${error.code})`);
-            if (error.code === error.PERMISSION_DENIED) {
-                stopWatcher(); 
+        // --- Fallback function to get location with lower accuracy ---
+        function tryFallbackLocation() {
+            console.log("Primary location method failed. Attempting fallback...");
+            navigator.geolocation.getCurrentPosition(
+                processLocation,
+                (err) => locationError(err, true),
+                { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+            );
+        }
+
+        // --- Geolocation error handler ---
+        function locationError(error, isFallback = false) {
+            console.error(`Geolocation error (isFallback: ${isFallback}). Details:`, JSON.stringify(error, Object.getOwnPropertyNames(error)));
+            if (isFallback) {
+                speedLimitElement.classList.add('error-text');
+                speedLimitElement.textContent = "API ERR";
+                showMessage("Location is completely unavailable.", 8000);
+                isFetching = false;
+                return;
+            }
+            if (error && typeof error.code !== 'undefined' && error.code === 1) { // PERMISSION_DENIED
                 speedLimitElement.classList.add('error-text');
                 speedLimitElement.textContent = "DENIED";
+                showMessage("Location access denied. Check browser/system settings.", 6000);
+                isFetching = false;
+                return;
             }
-        }
-
-        function startWatcher() {
-            if (!('geolocation' in navigator)) return; 
-            if (watchId === null) { 
-                console.log("Starting location watcher...");
-                watchId = navigator.geolocation.watchPosition(
-                    processLocation,
-                    locationError,
-                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-                );
-            }
-        }
-
-        function stopWatcher() {
-            if (watchId !== null) {
-                navigator.geolocation.clearWatch(watchId);
-                watchId = null;
-                console.log("Location watcher paused.");
-            }
+            // For any other error on the first try, attempt the fallback.
+            tryFallbackLocation();
         }
         
-        const handleOrientationChange = () => {
-            const isPortrait = screen.orientation.type.startsWith('portrait');
-            console.log(`Orientation changed. Is Portrait: ${isPortrait}`);
-
-            if (isPortrait) {
-                console.log('Applying vertical animation.');
-                signContainerElement.classList.remove('bob-horizontal');
-                signContainerElement.classList.add('bob-vertical');
-            } else {
-                console.log('Applying horizontal animation.');
-                signContainerElement.classList.remove('bob-vertical');
-                signContainerElement.classList.add('bob-horizontal');
-            }
-        };
-
-        function handleVisibilityChange() {
-            if (document.hidden) {
-                stopWatcher();
-            } else {
-                startWatcher();
-                requestWakeLock();
-            }
-        }
-        
+        // --- Start the app ---
         function startApp() {
             if (!('geolocation' in navigator)) {
+                showMessage("Geolocation is not supported by your browser.", 5000);
                 speedLimitElement.textContent = "N/A";
                 return;
             }
-            
-            updateDisplay(null, true);
-            startWatcher();
-            requestWakeLock();
-            
-            document.body.addEventListener('click', toggleFullScreen);
-            
-            handleOrientationChange();
-            if (screen.orientation && screen.orientation.addEventListener) {
-                screen.orientation.addEventListener('change', handleOrientationChange);
-            } else {
-                window.addEventListener('resize', handleOrientationChange);
-            }
 
-            setTimeout(() => {
-                if (!document.fullscreenElement) {
-                   console.log("Attempting to enter fullscreen automatically.");
-                   toggleFullScreen();
-                }
-            }, 1000);
+            const getLocationAndUpdate = () => {
+                if (isFetching) { return; }
+                isFetching = true;
+                console.log("Requesting current position (high accuracy)...");
+                navigator.geolocation.getCurrentPosition(
+                    processLocation,
+                    locationError,
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+            };
 
-            document.addEventListener('visibilitychange', handleVisibilityChange, false);
+            getLocationAndUpdate();
+            setInterval(getLocationAndUpdate, 5000);
         }
 
         window.onload = startApp;
-    </script>
-    <!-- Script to register the service worker -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/service-worker.js').then(registration => {
-            console.log('ServiceWorker registration successful with scope: ', registration.scope);
-          }, err => {
-            console.log('ServiceWorker registration failed: ', err);
-          });
-        });
-      }
     </script>
 </body>
 </html>
