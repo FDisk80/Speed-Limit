@@ -1,14 +1,14 @@
 {
   "short_name": "Speed Sign",
-  "name": "Real-Time Speed Limit",
+  "name": "Speed Limit",
   "icons": [
     {
-      "src": "https://placehold.co/192x192/ffffff/d90429?text=70",
+      "src": "https://placehold.co/192x192/ffffff/d90429?text=50",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "https://placehold.co/512x512/ffffff/d90429?text=70",
+      "src": "https://placehold.co/512x512/ffffff/d90429?text=50",
       "type": "image/png",
       "sizes": "512x512"
     }
