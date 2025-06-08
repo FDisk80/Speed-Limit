@@ -87,26 +87,31 @@
         #speed-limit {
             font-weight: 900;
             color: #000000;
-            /* UPDATED: Removed padding to allow flexbox to handle centering perfectly */
             box-sizing: border-box;
         }
         
-        /* UPDATED: Reduced font sizes to prevent them from touching the border */
+        /* Default font sizes (Portrait) */
         .font-size-large {
-            font-size: 62vmin; /* for 1-2 digits */
+            font-size: 62vmin;
             line-height: 1; 
         }
         
         .font-size-medium {
-            font-size: 46vmin; /* for 3 digits */
+            font-size: 46vmin;
             line-height: 1; 
         }
         
-        @media (min-width: 450px) {
-            #speed-limit {
-                /* Removed padding-top */
+        /* NEW: Media query specifically for landscape orientation */
+        @media (orientation: landscape) {
+            .font-size-large {
+                font-size: 58vmin; /* Smaller font size for landscape */
             }
-            /* UPDATED: Adjusted fixed sizes to match vmin reduction */
+            .font-size-medium {
+                font-size: 42vmin; /* Smaller font size for landscape */
+            }
+        }
+
+        @media (min-width: 450px) {
             .font-size-large {
                 font-size: 255px;
             }
