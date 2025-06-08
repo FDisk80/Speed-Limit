@@ -15,4 +15,4 @@ It will then display an estimated speed limit based on that road type as an advi
 
 **Note:** The screen will not go to sleep as long as the page is opened.
 
-![image](https://github.com/user-attachments/assets/1e7a8473-db7c-4a43-a1b4-d7f67e76bf74)
+![image](https://github.com/user-attachments/assets/30ccfeec-4806-4951-92d9-152d996fa393)
