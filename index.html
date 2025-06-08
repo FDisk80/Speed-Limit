@@ -6,8 +6,10 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Speed Limit</title>
-    <!-- NEW: Link to the Web App Manifest -->
+    <!-- NEW: Set the browser's UI color to match the app's background -->
+    <meta name="theme-color" content="#000000">
+    <title>Real-Time Speed Limit</title>
+    <!-- Link to the Web App Manifest -->
     <link rel="manifest" href="manifest.json">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@900&display=swap');
@@ -311,7 +313,7 @@
 
         window.onload = startApp;
     </script>
-    <!-- NEW: Script to register the service worker -->
+    <!-- Script to register the service worker -->
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
