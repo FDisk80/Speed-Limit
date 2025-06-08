@@ -1,6 +1,7 @@
 Shows a simple European style speed limit in Kilometers and slowly moves the sign up and down (or left to right in horizontal mode) to prevent OLED screen burn-in on mobile displays.
 
-**Install on Your Phone:** Open Chrome on your Android phone and navigate to GitHub Page URL.
+**Install on Your Phone:** Open Chrome on your Android phone and navigate to: https://fdisk80.github.io/SpeedLimitAndroid
+
 Chrome should automatically detect that this is an installable PWA. Tap the three-dot menu icon in the top right.
 You should see an option that says "Install app" or "Add to Home screen". Tap it.
 Confirm the installation.
