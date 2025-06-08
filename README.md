@@ -6,6 +6,9 @@ Chrome should automatically detect that this is an installable PWA. Tap the thre
 You should see an option that says "Install app" or "Add to Home screen". Tap it.
 Confirm the installation.
 
+**Note:** If you have you have a thin white line at the top, this is a Chrome behaviour. In this case open the link in Fireforx instead and use the "Add to Home screen" feature to quickly open it as an app without the address bar.
+
+
 **Fallback system:** First, it will try to find the exact, posted speed limit for your location.
 If it can't find one, it will perform a second search to determine the type of road you are on (e.g., motorway, residential street).
 It will then display an estimated speed limit based on that road type as an advisory speed.
