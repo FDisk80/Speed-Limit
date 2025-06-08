@@ -100,13 +100,13 @@
             line-height: 1; 
         }
         
-        /* UPDATED: Media query with smaller font sizes for landscape */
+        /* UPDATED: Media query with balanced font sizes for landscape */
         @media (orientation: landscape) {
             .font-size-large {
-                font-size: 42vmin; /* Was 45vmin */
+                font-size: 50vmin; /* Was 42vmin, originally 62vmin */
             }
             .font-size-medium {
-                font-size: 32vmin; /* Was 34vmin */
+                font-size: 38vmin; /* Was 32vmin, originally 46vmin */
             }
         }
         
@@ -302,7 +302,6 @@
 
         window.onload = startApp;
     </script>
-    <!-- Script to register the service worker -->
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
