@@ -89,14 +89,14 @@
             box-sizing: border-box;
         }
         
-        /* UPDATED: Default font sizes (Portrait) reduced */
+        /* Default font sizes (Portrait) reduced */
         .font-size-large {
-            font-size: 60vmin; /* Was 62vmin */
+            font-size: 60vmin;
             line-height: 1; 
         }
         
         .font-size-medium {
-            font-size: 44vmin; /* Was 46vmin */
+            font-size: 44vmin;
             line-height: 1; 
         }
         
@@ -130,6 +130,8 @@
         let lastKnownSpeed = null;
         let watchId = null;
         let wakeLock = null;
+        // NEW: Timer to handle temporary signal loss (like in tunnels)
+        let noSignalTimer = null;
 
         const requestWakeLock = async () => {
           if ('wakeLock' in navigator) {
@@ -154,11 +156,10 @@
         // UPDATED: More accurate data fetching logic
         async function fetchSpeedLimit(lat, lon) {
             const overpassApiUrl = 'https://overpass-api.de/api/interpreter';
-            // This new query finds the ONE nearest road within 50 meters and gets its tags.
-            // This is much more accurate than getting all roads in a radius.
+            // This new query finds the ONE nearest road within a more precise 25 meters.
             const query = `
                 [out:json][timeout:10];
-                way(around:50,${lat},${lon})[highway];
+                way(around:25,${lat},${lon})[highway];
                 (._;>;);
                 out tags;`;
             
@@ -168,18 +169,13 @@
                 const data = await response.json();
 
                 if (data.elements.length > 0) {
-                    // Find the road 'way' element from the response.
                     const roadElement = data.elements.find(el => el.type === 'way');
                     if (roadElement && roadElement.tags) {
                         const tags = roadElement.tags;
-                        
-                        // 1. Check for a specific 'maxspeed' tag. This is the best case.
                         if (tags.maxspeed) {
                             console.log("Found explicit speed limit:", tags.maxspeed);
                             return tags.maxspeed;
                         }
-                        
-                        // 2. If no 'maxspeed' tag, fall back to the road type.
                         if (tags.highway) {
                             console.log("No explicit speed. Estimating from road type:", tags.highway);
                             switch (tags.highway) {
@@ -197,7 +193,6 @@
                         }
                     }
                 }
-                // 3. If no road is found at all.
                 return null;
             } catch (error) {
                 console.error("Error fetching speed limit:", error);
@@ -225,11 +220,31 @@
             }
         }
         
+        // UPDATED: Smarter logic to handle signal loss
         async function processLocation(position) {
             const { latitude, longitude } = position.coords;
             console.log(`Watcher reported new position: ${latitude}, ${longitude}`);
             const speed = await fetchSpeedLimit(latitude, longitude);
-            updateDisplay(speed);
+
+            if (speed) {
+                // If we get a good speed, clear any signal loss timer and update.
+                if (noSignalTimer) {
+                    clearTimeout(noSignalTimer);
+                    noSignalTimer = null;
+                }
+                updateDisplay(speed);
+            } else {
+                // If we get a bad reading (null), we don't immediately show '--'.
+                // We only start a timer if one isn't already running.
+                if (!noSignalTimer) {
+                    console.log("No speed data. Starting 15s timer before showing '--'.");
+                    noSignalTimer = setTimeout(() => {
+                        console.log("Timer elapsed. No new signal. Showing '--'.");
+                        updateDisplay(null); // Now update to '--' after the delay
+                        noSignalTimer = null; 
+                    }, 15000); // 15-second delay before showing "--"
+                }
+            }
         }
 
         function locationError(error) {
@@ -255,6 +270,8 @@
 
         function stopWatcher() {
             if (watchId !== null) {
+                clearTimeout(noSignalTimer); // Clear timer if we stop the watcher
+                noSignalTimer = null;
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
                 console.log("Location watcher paused.");
