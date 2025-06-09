@@ -89,7 +89,7 @@
             box-sizing: border-box;
         }
         
-        /* Default font sizes (Portrait) reduced */
+        /* Default font sizes (Portrait) */
         .font-size-large {
             font-size: 60vmin;
             line-height: 1; 
@@ -130,7 +130,6 @@
         let lastKnownSpeed = null;
         let watchId = null;
         let wakeLock = null;
-        // NEW: Timer to handle temporary signal loss (like in tunnels)
         let noSignalTimer = null;
 
         const requestWakeLock = async () => {
@@ -153,44 +152,71 @@
             }
         };
 
-        // UPDATED: More accurate data fetching logic
+        // NEW: Helper function to normalize road names for comparison
+        const normalizeRoadName = (name) => {
+            if (!name) return '';
+            return name.toLowerCase().replace(/ (st|street|rd|road|ave|avenue|blvd|boulevard|ln|lane|dr|drive|ct|court|pl|place|sq|square)$/, '');
+        };
+
+        // UPDATED: fetchSpeedLimit now uses two data sources and prioritizes major roads
         async function fetchSpeedLimit(lat, lon) {
             const overpassApiUrl = 'https://overpass-api.de/api/interpreter';
-            // This new query finds the ONE nearest road within a more precise 25 meters.
-            const query = `
+            // NEW: Nominatim is our second, cross-referencing data source.
+            const nominatimApiUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18`;
+
+            // Query 1: Prioritize major roads first
+            let query = `
                 [out:json][timeout:10];
-                way(around:25,${lat},${lon})[highway];
+                way(around:25,${lat},${lon})[highway~"^(motorway|trunk|primary|secondary)$"];
                 (._;>;);
                 out tags;`;
-            
-            try {
-                const response = await fetch(`${overpassApiUrl}?data=${encodeURIComponent(query)}`);
-                if (!response.ok) throw new Error(`API query failed: ${response.status}`);
-                const data = await response.json();
 
-                if (data.elements.length > 0) {
-                    const roadElement = data.elements.find(el => el.type === 'way');
-                    if (roadElement && roadElement.tags) {
+            try {
+                let response = await fetch(`${overpassApiUrl}?data=${encodeURIComponent(query)}`);
+                let data = await response.json();
+
+                // Query 2: If no major roads found, search for any road as a fallback
+                if (data.elements.length === 0) {
+                    console.log("No major roads found, trying minor roads.");
+                    query = `
+                        [out:json][timeout:10];
+                        way(around:25,${lat},${lon})[highway];
+                        (._;>;);
+                        out tags;`;
+                    response = await fetch(`${overpassApiUrl}?data=${encodeURIComponent(query)}`);
+                    data = await response.json();
+                }
+
+                const roadElement = data.elements.find(el => el.type === 'way');
+
+                // If Overpass finds a road, cross-reference it with Nominatim
+                if (roadElement && roadElement.tags) {
+                    const overpassRoadName = roadElement.tags.name;
+                    
+                    const nominatimResponse = await fetch(nominatimApiUrl);
+                    const nominatimData = await nominatimResponse.json();
+                    const nominatimRoadName = nominatimData.address ? nominatimData.address.road : null;
+
+                    console.log(`Cross-referencing: Overpass says "${overpassRoadName}", Nominatim says "${nominatimRoadName}"`);
+
+                    // If the road names match, we have a confident result
+                    if (normalizeRoadName(overpassRoadName) === normalizeRoadName(nominatimRoadName)) {
                         const tags = roadElement.tags;
-                        if (tags.maxspeed) {
-                            console.log("Found explicit speed limit:", tags.maxspeed);
-                            return tags.maxspeed;
-                        }
+                        if (tags.maxspeed) return tags.maxspeed;
                         if (tags.highway) {
-                            console.log("No explicit speed. Estimating from road type:", tags.highway);
                             switch (tags.highway) {
                                 case 'motorway': return '110';
                                 case 'trunk': return '90';
                                 case 'primary': return '80';
                                 case 'secondary': return '70';
                                 case 'tertiary': return '60';
-                                case 'residential':
-                                case 'unclassified':
-                                case 'living_street':
-                                    return '50';
+                                case 'residential': case 'unclassified': case 'living_street': return '50';
                                 default: return null;
                             }
                         }
+                    } else {
+                        console.log("Road name mismatch, ignoring result to prevent flicker.");
+                        return null; // Mismatch means we're likely between two roads, safer to return nothing.
                     }
                 }
                 return null;
@@ -220,29 +246,25 @@
             }
         }
         
-        // UPDATED: Smarter logic to handle signal loss
         async function processLocation(position) {
             const { latitude, longitude } = position.coords;
             console.log(`Watcher reported new position: ${latitude}, ${longitude}`);
             const speed = await fetchSpeedLimit(latitude, longitude);
 
             if (speed) {
-                // If we get a good speed, clear any signal loss timer and update.
                 if (noSignalTimer) {
                     clearTimeout(noSignalTimer);
                     noSignalTimer = null;
                 }
                 updateDisplay(speed);
             } else {
-                // If we get a bad reading (null), we don't immediately show '--'.
-                // We only start a timer if one isn't already running.
                 if (!noSignalTimer) {
                     console.log("No speed data. Starting 15s timer before showing '--'.");
                     noSignalTimer = setTimeout(() => {
                         console.log("Timer elapsed. No new signal. Showing '--'.");
-                        updateDisplay(null); // Now update to '--' after the delay
+                        updateDisplay(null);
                         noSignalTimer = null; 
-                    }, 15000); // 15-second delay before showing "--"
+                    }, 15000);
                 }
             }
         }
@@ -270,7 +292,7 @@
 
         function stopWatcher() {
             if (watchId !== null) {
-                clearTimeout(noSignalTimer); // Clear timer if we stop the watcher
+                clearTimeout(noSignalTimer);
                 noSignalTimer = null;
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
