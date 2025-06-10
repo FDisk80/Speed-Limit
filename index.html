@@ -130,7 +130,7 @@
         let wakeLock = null;
         let noSignalTimer = null;
 
-        // UPDATED: Function to dynamically set animation boundaries with a larger margin
+        // UPDATED: Function to dynamically set animation boundaries with a doubled margin
         const updateAnimationBounds = () => {
             const signHeight = signContainerElement.offsetHeight;
             const signWidth = signContainerElement.offsetWidth;
@@ -138,7 +138,7 @@
             const windowWidth = window.innerWidth;
             
             // Increased margin significantly to ensure the sign never touches the edge
-            const margin = 30; // Was 15, now a 30px buffer
+            const margin = 60; // Was 30, now a 60px buffer
 
             const maxTravelY = ((windowHeight - signHeight) / 2) - margin;
             const maxTravelX = ((windowWidth - signWidth) / 2) - margin;
