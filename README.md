@@ -8,7 +8,7 @@ Confirm the installation.
 
 The screen will not go to sleep as long as the page is opened.
 
-**Note:** If you have you have a thin gray line at the top, this is a Chrome behaviour. To resolve this move the Chrime addredd bar to the bottom. Or open the link in Firefox instead and use the "Add to Home screen" feature to quickly open it as an app without the address bar.
+**Note:** If you have you have a thin gray line at the top, this is a Chrome behaviour. To resolve this move the Chrome addredd bar to the bottom and run without installing the app. Or open the link in Firefox instead and use the "Add to Home screen" feature to quickly open it as an app without the address bar.
 
 ![image](https://github.com/user-attachments/assets/f45e15a2-1efb-4234-944a-16ffa8f019d2)
 
