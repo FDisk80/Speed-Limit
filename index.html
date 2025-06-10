@@ -25,7 +25,7 @@
             overflow: hidden;
         }
 
-        /* UPDATED: Keyframes no longer define the transform distance. This will be handled by JavaScript. */
+        /* Keyframes no longer define the transform distance. This will be handled by JavaScript. */
         @keyframes full-bob-vertical {
             0% { transform: translateY(0); }
             25% { transform: var(--bob-max-y); }
@@ -130,21 +130,24 @@
         let wakeLock = null;
         let noSignalTimer = null;
 
-        // --- NEW: Function to dynamically set animation boundaries ---
+        // UPDATED: Function to dynamically set animation boundaries with a margin
         const updateAnimationBounds = () => {
             const signHeight = signContainerElement.offsetHeight;
             const signWidth = signContainerElement.offsetWidth;
             const windowHeight = window.innerHeight;
             const windowWidth = window.innerWidth;
-
-            const maxTravelY = (windowHeight - signHeight) / 2;
-            const maxTravelX = (windowWidth - signWidth) / 2;
             
-            // Use CSS Custom Properties to set the animation distance
-            document.documentElement.style.setProperty('--bob-max-y', `translateY(${maxTravelY}px)`);
-            document.documentElement.style.setProperty('--bob-min-y', `translateY(-${maxTravelY}px)`);
-            document.documentElement.style.setProperty('--bob-max-x', `translateX(${maxTravelX}px)`);
-            document.documentElement.style.setProperty('--bob-min-x', `translateX(-${maxTravelX}px)`);
+            // This margin ensures the sign border doesn't touch the screen edge
+            const margin = 15; // A 15px buffer
+
+            const maxTravelY = ((windowHeight - signHeight) / 2) - margin;
+            const maxTravelX = ((windowWidth - signWidth) / 2) - margin;
+            
+            // Only apply travel if it's a positive number to prevent weird behavior on resize
+            document.documentElement.style.setProperty('--bob-max-y', `translateY(${Math.max(0, maxTravelY)}px)`);
+            document.documentElement.style.setProperty('--bob-min-y', `translateY(-${Math.max(0, maxTravelY)}px)`);
+            document.documentElement.style.setProperty('--bob-max-x', `translateX(${Math.max(0, maxTravelX)}px)`);
+            document.documentElement.style.setProperty('--bob-min-x', `translateX(-${Math.max(0, maxTravelX)}px)`);
             console.log(`Animation bounds updated. Vertical: ±${maxTravelY.toFixed(1)}px, Horizontal: ±${maxTravelX.toFixed(1)}px`);
         };
 
