@@ -25,21 +25,21 @@
             overflow: hidden;
         }
 
-        /* Vertical animation */
+        /* UPDATED: Vertical animation with a responsive margin */
         @keyframes full-bob-vertical {
             0% { transform: translateY(0); }
-            25% { transform: translateY(calc(50vh - 50% - 15px)); }
+            25% { transform: translateY(calc(50vh - 50% - 3vmin)); } /* Changed to 3vmin margin */
             50% { transform: translateY(0); }
-            75% { transform: translateY(calc(-50vh + 50% + 15px)); }
+            75% { transform: translateY(calc(-50vh + 50% + 3vmin)); } /* Changed to 3vmin margin */
             100% { transform: translateY(0); }
         }
         
-        /* Horizontal animation */
+        /* UPDATED: Horizontal animation with a responsive margin */
         @keyframes full-bob-horizontal {
             0% { transform: translateX(0); }
-            25% { transform: translateX(calc(50vw - 50% - 15px)); }
+            25% { transform: translateX(calc(50vw - 50% - 3vmin)); } /* Changed to 3vmin margin */
             50% { transform: translateX(0); }
-            75% { transform: translateX(calc(-50vw + 50% + 15px)); }
+            75% { transform: translateX(calc(-50vw + 50% + 3vmin)); } /* Changed to 3vmin margin */
             100% { transform: translateX(0); }
         }
         
@@ -151,38 +151,74 @@
                 document.exitFullscreen();
             }
         };
+        
+        function degreesToRadians(degrees) { return degrees * Math.PI / 180; }
+        function radiansToDegrees(radians) { return radians * 180 / Math.PI; }
 
-        // UPDATED: fetchSpeedLimit now uses a more robust, two-stage query system
-        async function fetchSpeedLimit(lat, lon) {
+        function calculateBearing(startLat, startLng, destLat, destLng) {
+            startLat = degreesToRadians(startLat);
+            startLng = degreesToRadians(startLng);
+            destLat = degreesToRadians(destLat);
+            destLng = degreesToRadians(destLng);
+            const y = Math.sin(destLng - startLng) * Math.cos(destLat);
+            const x = Math.cos(startLat) * Math.sin(destLat) - Math.sin(startLat) * Math.cos(destLat) * Math.cos(destLng - startLng);
+            let brng = Math.atan2(y, x);
+            brng = radiansToDegrees(brng);
+            return (brng + 360) % 360;
+        }
+
+        function getDirectionDifference(angle1, angle2) {
+            let difference = Math.abs(angle1 - angle2);
+            if (difference > 180) { difference = 360 - difference; }
+            return difference;
+        }
+
+
+        async function fetchSpeedLimit(lat, lon, heading) {
             const overpassApiUrl = 'https://overpass-api.de/api/interpreter';
 
-            // Helper function to find the nearest road of a given type
             const findRoad = async (roadTypes, radius) => {
                 const query = `
                     [out:json][timeout:10];
                     way(around:${radius},${lat},${lon})[highway~"${roadTypes}"];
-                    (._;>;);
-                    out tags;`;
+                    out geom;`;
                 try {
                     const response = await fetch(`${overpassApiUrl}?data=${encodeURIComponent(query)}`);
                     if (!response.ok) return null;
                     const data = await response.json();
-                    return data.elements.find(el => el.type === 'way');
+                    
+                    const candidates = data.elements.filter(el => el.type === 'way' && el.geometry && el.geometry.length >= 2);
+
+                    if (candidates.length === 0) return null;
+
+                    if (heading !== null && heading !== undefined) {
+                        for (const road of candidates) {
+                            const geom = road.geometry;
+                            const roadBearing = calculateBearing(geom[0].lat, geom[0].lon, geom[1].lat, geom[1].lon);
+                            const difference = getDirectionDifference(heading, roadBearing);
+
+                            console.log(`User heading: ${heading.toFixed(1)}°, Road bearing: ${roadBearing.toFixed(1)}°, Difference: ${difference.toFixed(1)}°`);
+                            if (difference < 75) {
+                                console.log("Direction match found!");
+                                return road;
+                            }
+                        }
+                        console.log("No road found with a matching direction.");
+                        return null;
+                    }
+                    
+                    return candidates[0];
+
                 } catch (error) {
                     console.error(`Error querying for ${roadTypes}:`, error);
                     return null;
                 }
             };
             
-            // Helper function to extract speed from road tags
             const getSpeedFromTags = (tags) => {
                 if (!tags) return null;
-                if (tags.maxspeed) {
-                    console.log("Found explicit speed limit:", tags.maxspeed);
-                    return tags.maxspeed;
-                }
+                if (tags.maxspeed) return tags.maxspeed;
                 if (tags.highway) {
-                    console.log("No explicit speed. Estimating from road type:", tags.highway);
                     switch (tags.highway) {
                         case 'motorway': return '110';
                         case 'trunk': return '90';
@@ -196,34 +232,27 @@
                 return null;
             };
 
-            // Stage 1: Search for major roads in a 30m radius
-            console.log("Stage 1: Searching for major roads...");
-            let roadElement = await findRoad("^(motorway|trunk|primary|secondary)$", 30);
+            let roadElement = await findRoad("^(motorway|trunk|primary|secondary)$", 20, heading);
 
-            // Stage 2: If no major road found, search for minor roads in a tighter 15m radius
             if (!roadElement) {
-                console.log("Stage 2: No major roads found, searching for minor roads...");
-                roadElement = await findRoad("^(tertiary|residential|unclassified|living_street)$", 15);
+                roadElement = await findRoad("^(tertiary|residential|unclassified|living_street)$", 10, heading);
             }
             
             if (roadElement) {
                 return getSpeedFromTags(roadElement.tags);
             }
 
-            console.log("No suitable road found in either stage.");
-            return null; // No road found in any stage
+            return null;
         }
 
         function updateDisplay(speed, isInitialCall = false) {
             speedLimitElement.classList.remove('error-text');
             
             if (isInitialCall || speed !== lastKnownSpeed) {
-                // Don't pulse on initial load
                 if (!isInitialCall) {
                     signContainerElement.classList.add('sign-pulse');
                     setTimeout(() => signContainerElement.classList.remove('sign-pulse'), 500);
                 }
-
                 const speedText = speed || '--';
                 speedLimitElement.textContent = speedText;
                 lastKnownSpeed = speed;
@@ -238,9 +267,9 @@
         }
         
         async function processLocation(position) {
-            const { latitude, longitude } = position.coords;
-            console.log(`Watcher reported new position: ${latitude}, ${longitude}`);
-            const speed = await fetchSpeedLimit(latitude, longitude);
+            const { latitude, longitude, heading } = position.coords;
+            console.log(`Watcher reported new position: ${latitude}, ${longitude}, Heading: ${heading}`);
+            const speed = await fetchSpeedLimit(latitude, longitude, heading);
 
             if (speed) {
                 if (noSignalTimer) {
@@ -293,14 +322,10 @@
         
         const handleOrientationChange = () => {
             const isPortrait = screen.orientation.type.startsWith('portrait');
-            console.log(`Orientation changed. Is Portrait: ${isPortrait}`);
-
             if (isPortrait) {
-                console.log('Applying vertical animation.');
                 signContainerElement.classList.remove('bob-horizontal');
                 signContainerElement.classList.add('bob-vertical');
             } else {
-                console.log('Applying horizontal animation.');
                 signContainerElement.classList.remove('bob-vertical');
                 signContainerElement.classList.add('bob-horizontal');
             }
