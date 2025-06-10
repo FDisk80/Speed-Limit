@@ -152,86 +152,77 @@
             }
         };
 
-        // NEW: Helper function to normalize road names for comparison
-        const normalizeRoadName = (name) => {
-            if (!name) return '';
-            return name.toLowerCase().replace(/ (st|street|rd|road|ave|avenue|blvd|boulevard|ln|lane|dr|drive|ct|court|pl|place|sq|square)$/, '');
-        };
-
-        // UPDATED: fetchSpeedLimit now uses two data sources and prioritizes major roads
+        // UPDATED: fetchSpeedLimit now uses a more robust, two-stage query system
         async function fetchSpeedLimit(lat, lon) {
             const overpassApiUrl = 'https://overpass-api.de/api/interpreter';
-            // NEW: Nominatim is our second, cross-referencing data source.
-            const nominatimApiUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18`;
 
-            // Query 1: Prioritize major roads first
-            let query = `
-                [out:json][timeout:10];
-                way(around:25,${lat},${lon})[highway~"^(motorway|trunk|primary|secondary)$"];
-                (._;>;);
-                out tags;`;
-
-            try {
-                let response = await fetch(`${overpassApiUrl}?data=${encodeURIComponent(query)}`);
-                let data = await response.json();
-
-                // Query 2: If no major roads found, search for any road as a fallback
-                if (data.elements.length === 0) {
-                    console.log("No major roads found, trying minor roads.");
-                    query = `
-                        [out:json][timeout:10];
-                        way(around:25,${lat},${lon})[highway];
-                        (._;>;);
-                        out tags;`;
-                    response = await fetch(`${overpassApiUrl}?data=${encodeURIComponent(query)}`);
-                    data = await response.json();
+            // Helper function to find the nearest road of a given type
+            const findRoad = async (roadTypes, radius) => {
+                const query = `
+                    [out:json][timeout:10];
+                    way(around:${radius},${lat},${lon})[highway~"${roadTypes}"];
+                    (._;>;);
+                    out tags;`;
+                try {
+                    const response = await fetch(`${overpassApiUrl}?data=${encodeURIComponent(query)}`);
+                    if (!response.ok) return null;
+                    const data = await response.json();
+                    return data.elements.find(el => el.type === 'way');
+                } catch (error) {
+                    console.error(`Error querying for ${roadTypes}:`, error);
+                    return null;
                 }
-
-                const roadElement = data.elements.find(el => el.type === 'way');
-
-                // If Overpass finds a road, cross-reference it with Nominatim
-                if (roadElement && roadElement.tags) {
-                    const overpassRoadName = roadElement.tags.name;
-                    
-                    const nominatimResponse = await fetch(nominatimApiUrl);
-                    const nominatimData = await nominatimResponse.json();
-                    const nominatimRoadName = nominatimData.address ? nominatimData.address.road : null;
-
-                    console.log(`Cross-referencing: Overpass says "${overpassRoadName}", Nominatim says "${nominatimRoadName}"`);
-
-                    // If the road names match, we have a confident result
-                    if (normalizeRoadName(overpassRoadName) === normalizeRoadName(nominatimRoadName)) {
-                        const tags = roadElement.tags;
-                        if (tags.maxspeed) return tags.maxspeed;
-                        if (tags.highway) {
-                            switch (tags.highway) {
-                                case 'motorway': return '110';
-                                case 'trunk': return '90';
-                                case 'primary': return '80';
-                                case 'secondary': return '70';
-                                case 'tertiary': return '60';
-                                case 'residential': case 'unclassified': case 'living_street': return '50';
-                                default: return null;
-                            }
-                        }
-                    } else {
-                        console.log("Road name mismatch, ignoring result to prevent flicker.");
-                        return null; // Mismatch means we're likely between two roads, safer to return nothing.
+            };
+            
+            // Helper function to extract speed from road tags
+            const getSpeedFromTags = (tags) => {
+                if (!tags) return null;
+                if (tags.maxspeed) {
+                    console.log("Found explicit speed limit:", tags.maxspeed);
+                    return tags.maxspeed;
+                }
+                if (tags.highway) {
+                    console.log("No explicit speed. Estimating from road type:", tags.highway);
+                    switch (tags.highway) {
+                        case 'motorway': return '110';
+                        case 'trunk': return '90';
+                        case 'primary': return '80';
+                        case 'secondary': return '70';
+                        case 'tertiary': return '60';
+                        case 'residential': case 'unclassified': case 'living_street': return '50';
+                        default: return null;
                     }
                 }
                 return null;
-            } catch (error) {
-                console.error("Error fetching speed limit:", error);
-                return null;
+            };
+
+            // Stage 1: Search for major roads in a 30m radius
+            console.log("Stage 1: Searching for major roads...");
+            let roadElement = await findRoad("^(motorway|trunk|primary|secondary)$", 30);
+
+            // Stage 2: If no major road found, search for minor roads in a tighter 15m radius
+            if (!roadElement) {
+                console.log("Stage 2: No major roads found, searching for minor roads...");
+                roadElement = await findRoad("^(tertiary|residential|unclassified|living_street)$", 15);
             }
+            
+            if (roadElement) {
+                return getSpeedFromTags(roadElement.tags);
+            }
+
+            console.log("No suitable road found in either stage.");
+            return null; // No road found in any stage
         }
 
         function updateDisplay(speed, isInitialCall = false) {
             speedLimitElement.classList.remove('error-text');
             
             if (isInitialCall || speed !== lastKnownSpeed) {
-                signContainerElement.classList.add('sign-pulse');
-                setTimeout(() => signContainerElement.classList.remove('sign-pulse'), 500);
+                // Don't pulse on initial load
+                if (!isInitialCall) {
+                    signContainerElement.classList.add('sign-pulse');
+                    setTimeout(() => signContainerElement.classList.remove('sign-pulse'), 500);
+                }
 
                 const speedText = speed || '--';
                 speedLimitElement.textContent = speedText;
