@@ -130,34 +130,25 @@
         let wakeLock = null;
         let noSignalTimer = null;
 
-        // UPDATED: Function to dynamically set animation boundaries with the new margin
         const updateAnimationBounds = () => {
             const signHeight = signContainerElement.offsetHeight;
             const signWidth = signContainerElement.offsetWidth;
             const windowHeight = window.innerHeight;
             const windowWidth = window.innerWidth;
-            
-            // This is the line that controls the margin
-            const margin = 40; // A 40px buffer
-
+            const margin = 40;
             const maxTravelY = ((windowHeight - signHeight) / 2) - margin;
             const maxTravelX = ((windowWidth - signWidth) / 2) - margin;
-            
-            // Only apply travel if it's a positive number to prevent weird behavior on resize
             document.documentElement.style.setProperty('--bob-max-y', `translateY(${Math.max(0, maxTravelY)}px)`);
             document.documentElement.style.setProperty('--bob-min-y', `translateY(-${Math.max(0, maxTravelY)}px)`);
             document.documentElement.style.setProperty('--bob-max-x', `translateX(${Math.max(0, maxTravelX)}px)`);
             document.documentElement.style.setProperty('--bob-min-x', `translateX(-${Math.max(0, maxTravelX)}px)`);
-            console.log(`Animation bounds updated. Vertical: ±${maxTravelY.toFixed(1)}px, Horizontal: ±${maxTravelX.toFixed(1)}px`);
         };
-
 
         const requestWakeLock = async () => {
           if ('wakeLock' in navigator) {
             try {
               wakeLock = await navigator.wakeLock.request('screen');
               wakeLock.addEventListener('release', () => console.log('Screen Wake Lock was released'));
-              console.log('Screen Wake Lock is active');
             } catch (err) {
               console.error(`Wake Lock Error: ${err.name}, ${err.message}`);
             }
@@ -193,9 +184,22 @@
             return difference;
         }
 
-
+        // UPDATED: fetchSpeedLimit now uses country-specific fallbacks
         async function fetchSpeedLimit(lat, lon, heading) {
             const overpassApiUrl = 'https://overpass-api.de/api/interpreter';
+            const nominatimApiUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18`;
+
+            let countryCode = 'default';
+            try {
+                const nominatimResponse = await fetch(nominatimApiUrl);
+                const nominatimData = await nominatimResponse.json();
+                if (nominatimData.address && nominatimData.address.country_code) {
+                    countryCode = nominatimData.address.country_code;
+                }
+            } catch (error) {
+                console.error("Could not fetch country code:", error);
+            }
+            console.log(`Detected country code: ${countryCode}`);
 
             const findRoad = async (roadTypes, radius) => {
                 const query = `
@@ -208,7 +212,6 @@
                     const data = await response.json();
                     
                     const candidates = data.elements.filter(el => el.type === 'way' && el.geometry && el.geometry.length >= 2);
-
                     if (candidates.length === 0) return null;
 
                     if (heading !== null && heading !== undefined) {
@@ -216,10 +219,7 @@
                             const geom = road.geometry;
                             const roadBearing = calculateBearing(geom[0].lat, geom[0].lon, geom[1].lat, geom[1].lon);
                             const difference = getDirectionDifference(heading, roadBearing);
-
-                            if (difference < 75) {
-                                return road;
-                            }
+                            if (difference < 75) return road;
                         }
                         return null;
                     }
@@ -230,11 +230,46 @@
                 }
             };
             
-            const getSpeedFromTags = (tags) => {
+            // UPDATED: Speed estimation now uses the detected country code
+            const getSpeedFromTags = (tags, detectedCountryCode) => {
                 if (!tags) return null;
-                if (tags.maxspeed) return tags.maxspeed;
+                // Explicit speed limits are always preferred, but we check if it's in MPH
+                if (tags.maxspeed) {
+                    if (tags.maxspeed.toLowerCase().includes('mph')) {
+                        return tags.maxspeed.replace(/[^0-9]/g, '');
+                    }
+                    return tags.maxspeed;
+                }
+                
+                // Fallback to road type with country-specific logic
                 if (tags.highway) {
-                    switch (tags.highway) {
+                    const roadType = tags.highway;
+                    console.log(`Estimating for road type "${roadType}" in country "${detectedCountryCode}"`);
+                    // US Fallbacks (MPH)
+                    if (detectedCountryCode === 'us') {
+                        switch (roadType) {
+                            case 'motorway': return '70';
+                            case 'trunk': return '65';
+                            case 'primary': return '55';
+                            case 'secondary': case 'tertiary': return '45';
+                            case 'residential': case 'unclassified': case 'living_street': return '25';
+                            default: return null;
+                        }
+                    }
+                    // UK Fallbacks (MPH)
+                    if (detectedCountryCode === 'gb') {
+                         switch (roadType) {
+                            case 'motorway': return '70';
+                            case 'trunk': // Dual carriageway
+                            case 'primary': // A roads
+                            case 'secondary': // B roads
+                                return '60';
+                            case 'tertiary': case 'unclassified': case 'residential': case 'living_street': return '30';
+                            default: return null;
+                        }
+                    }
+                    // Default/Metric Fallbacks (km/h)
+                    switch (roadType) {
                         case 'motorway': return '110';
                         case 'trunk': return '90';
                         case 'primary': return '80';
@@ -248,21 +283,17 @@
             };
 
             let roadElement = await findRoad("^(motorway|trunk|primary|secondary)$", 20, heading);
-
             if (!roadElement) {
                 roadElement = await findRoad("^(tertiary|residential|unclassified|living_street)$", 10, heading);
             }
-            
             if (roadElement) {
-                return getSpeedFromTags(roadElement.tags);
+                return getSpeedFromTags(roadElement.tags, countryCode);
             }
-
             return null;
         }
 
         function updateDisplay(speed, isInitialCall = false) {
             speedLimitElement.classList.remove('error-text');
-            
             if (isInitialCall || speed !== lastKnownSpeed) {
                 if (!isInitialCall) {
                     signContainerElement.classList.add('sign-pulse');
@@ -272,7 +303,6 @@
                 speedLimitElement.textContent = speedText;
                 lastKnownSpeed = speed;
                 speedLimitElement.classList.remove('font-size-large', 'font-size-medium');
-                
                 if (speedText.toString().length >= 3) {
                     speedLimitElement.classList.add('font-size-medium');
                 } else {
@@ -283,9 +313,7 @@
         
         async function processLocation(position) {
             const { latitude, longitude, heading } = position.coords;
-            console.log(`Watcher reported new position: ${latitude}, ${longitude}, Heading: ${heading}`);
             const speed = await fetchSpeedLimit(latitude, longitude, heading);
-
             if (speed) {
                 if (noSignalTimer) {
                     clearTimeout(noSignalTimer);
@@ -294,9 +322,7 @@
                 updateDisplay(speed);
             } else {
                 if (!noSignalTimer) {
-                    console.log("No speed data. Starting 15s timer before showing '--'.");
                     noSignalTimer = setTimeout(() => {
-                        console.log("Timer elapsed. No new signal. Showing '--'.");
                         updateDisplay(null);
                         noSignalTimer = null; 
                     }, 15000);
@@ -316,7 +342,6 @@
         function startWatcher() {
             if (!('geolocation' in navigator)) return; 
             if (watchId === null) { 
-                console.log("Starting location watcher...");
                 watchId = navigator.geolocation.watchPosition(
                     processLocation,
                     locationError,
@@ -331,7 +356,6 @@
                 noSignalTimer = null;
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
-                console.log("Location watcher paused.");
             }
         }
         
@@ -344,7 +368,6 @@
                 signContainerElement.classList.remove('bob-vertical');
                 signContainerElement.classList.add('bob-horizontal');
             }
-            // Recalculate animation bounds on orientation change
             updateAnimationBounds();
         };
 
@@ -362,29 +385,23 @@
                 speedLimitElement.textContent = "N/A";
                 return;
             }
-            
             updateDisplay(null, true);
             startWatcher();
             requestWakeLock();
-            
             document.body.addEventListener('click', toggleFullScreen);
-            
             handleOrientationChange();
             if (screen.orientation && screen.orientation.addEventListener) {
                 screen.orientation.addEventListener('change', handleOrientationChange);
             }
-            // Listen for resize and fullscreen changes to recalculate bounds
             window.addEventListener('resize', updateAnimationBounds);
             document.addEventListener('fullscreenchange', () => {
-                setTimeout(updateAnimationBounds, 200); // Small delay for screen to settle
+                setTimeout(updateAnimationBounds, 200);
             });
-
 
             setTimeout(() => {
                 if (!document.fullscreenElement) {
                    toggleFullScreen();
                 }
-                 // Set initial bounds after a moment
                 updateAnimationBounds();
             }, 1000);
 
