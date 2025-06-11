@@ -1,4 +1,4 @@
-Shows a simple European style speed limit in Kilometers and slowly moves the sign up and down (or left to right in horizontal mode) to prevent OLED screen burn-in on mobile displays.
+Shows a simple European style speed limit sign in Km/h or Mph (Autodetected by country) and slowly moves the sign up and down (or left to right in horizontal mode) to prevent AMOLED screen burn-in on mobile displays.
 
 **To Install on Your Phone:** Open Chrome on your Android phone and navigate to: https://fdisk80.github.io/Speed-Limit
 
